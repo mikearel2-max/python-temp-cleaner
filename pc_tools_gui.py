@@ -31,8 +31,9 @@ class PcToolsGUI(tk.Tk):
         self.path_entry = ttk.Entry(top, textvariable=self.selected_path, width=70)
         self.path_entry.grid(row=1, column=0, sticky="we", padx=(0, 8), pady=(6, 0))
 
-        browse_btn = ttk.Button(top, text="Browse...", command=self.browse_folder)
-        browse_btn.grid(row=1, column=1, sticky="e", pady=(6, 0))
+        self.browse_btn = ttk.Button(top, text="Browse...", command=self.browse_folder)
+        self.browse_btn.grid(row=1, column=1, sticky="e", pady=(6, 0))
+
 
         top.columnconfigure(0, weight=1)
 
@@ -40,12 +41,13 @@ class PcToolsGUI(tk.Tk):
         opts = ttk.Frame(self, padding=(12, 0, 12, 12))
         opts.pack(fill="x")
 
-        ttk.Checkbutton(
+        self.dry_run_checkbox = ttk.Checkbutton(
             opts,
             text="Dry run (do NOT delete anything)",
             variable=self.dry_run
-        ).grid(row=0, column=0, sticky="w")
-
+        )
+        self.dry_run_checkbox.grid(row=0, column=0, sticky="w")
+        # You can add more options here in the future
         # --- Run button ---
         run_frame = ttk.Frame(self, padding=(12, 0, 12, 12))
         run_frame.pack(fill="x")
@@ -55,6 +57,10 @@ class PcToolsGUI(tk.Tk):
 
         self.status_label = ttk.Label(run_frame, text="")
         self.status_label.pack(side="left", padx=12)
+
+        self.progress = ttk.Progressbar(run_frame, mode="indeterminate", length=140)
+# DO NOT pack here; we’ll pack/unpack when running
+
 
         # --- Output box ---
         out_frame = ttk.Frame(self, padding=(12, 0, 12, 12))
@@ -72,6 +78,26 @@ class PcToolsGUI(tk.Tk):
         folder = filedialog.askdirectory(title="Select a folder to clean")
         if folder:
             self.selected_path.set(folder)
+
+    def _set_running(self, running: bool, status_text: str = ""):
+        state = "disabled" if running else "normal"
+
+        self.run_btn.configure(state=state)
+        self.path_entry.configure(state=state)
+        self.browse_btn.configure(state=state)
+        self.dry_run_checkbox.configure(state=state)
+
+        if running:
+            if not self.progress.winfo_ismapped():
+                self.progress.pack(side="left", padx=12)
+            self.progress.start(10)
+        else:
+            self.progress.stop()
+            if self.progress.winfo_ismapped():
+                self.progress.pack_forget()
+
+        self.status_label.configure(text=status_text)
+
 
     def on_run(self):
         path = self.selected_path.get().strip()
@@ -93,8 +119,7 @@ class PcToolsGUI(tk.Tk):
                 return
 
         # Run in background thread so GUI doesn't freeze
-        self.run_btn.configure(state="disabled")
-        self.status_label.configure(text="Running...")
+        self._set_running(True, "Running...")
 
         t = threading.Thread(target=self._run_cleaner, daemon=True)
         t.start()
@@ -113,16 +138,14 @@ class PcToolsGUI(tk.Tk):
 
     def _ui_error(self, msg: str):
         def _update():
-            self.run_btn.configure(state="normal")
-            self.status_label.configure(text="")
-            messagebox.showerror("Error", msg)
+            self._set_running(False, "")
+            messagebox.showerror("Error", f"An error occurred:\n{msg}")
 
         self.after(0, _update)
 
     def _ui_output(self, stats: dict):
         def _update():
-            self.run_btn.configure(state="normal")
-            self.status_label.configure(text="Done.")
+            self._set_running(False, "Done.")
 
             lines = []
             lines.append(f"Folder: {stats.get('temp_path')}")
